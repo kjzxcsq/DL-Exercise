@@ -41,6 +41,21 @@ class SoftMax(BaseLayer):
         Returns:
             np.ndarray: The error tensor for the previous layer, computed using the Jacobian matrix.
         """
+        softmax_output = self.output_tensor 
+        gradient = softmax_output * (error_tensor - np.sum(error_tensor * softmax_output, axis=1, keepdims=True))
+        
+        return gradient
+
+    def backward2(self, error_tensor):
+        """
+        Perform the backward pass of the SoftMax activation.
+
+        Args:
+            error_tensor (np.ndarray): The error tensor from the next layer.
+
+        Returns:
+            np.ndarray: The error tensor for the previous layer, computed using the Jacobian matrix.
+        """
         # Compute the gradient for each sample in the batch
         batch_size = self.output_tensor.shape[0]
         gradient = np.zeros_like(error_tensor)
