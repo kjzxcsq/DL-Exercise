@@ -4,16 +4,50 @@ from scipy.signal import correlate, convolve
 from .Base import BaseLayer
 
 class Conv(BaseLayer):
+    """
+    A convolutional layer that applies one-dimensional or two-dimensional convolutions 
+    on the input tensor.
+
+    This layer supports both 1D and 2D convolutions. For 1D convolutions, the input 
+    shape is expected to be (batch_size, channels, width), and for 2D convolutions, 
+    the input shape should be (batch_size, channels, height, width).
+
+    Attributes:
+        stride_shape (tuple): The stride for the convolution. It can be a single integer 
+            (for 1D) or a tuple of two integers (for 2D).
+        convolution_shape (tuple): The shape of the convolution kernels. For 1D, 
+            (in_channels, kernel_width), and for 2D, (in_channels, kernel_height, kernel_width).
+        num_kernels (int): The number of kernels (output channels) in this convolutional layer.
+        trainable (bool): Indicates if the layer has trainable parameters.
+        padded_input (np.ndarray or None): The input tensor after padding, stored during forward pass.
+        weights (np.ndarray): The weights of the layer with shape 
+            (num_kernels, in_channels, [kernel_height,] kernel_width).
+        bias (np.ndarray): The biases for each kernel, of shape (num_kernels,).
+        _gradient_weights (np.ndarray): The gradient of the loss with respect to the weights.
+        _gradient_bias (np.ndarray): The gradient of the loss with respect to the biases.
+        optimizer_weights: The optimizer instance for the weights.
+        optimizer_bias: The optimizer instance for the biases.
+        dim (int): The dimensionality of the convolution (1 or 2).
+    """
+
     def __init__(self, stride_shape, convolution_shape, num_kernels):
         """
-        Initializes the Conv layer.
+        Initialize the Conv layer.
+
+        This method determines if the convolution is 1D or 2D based on the 
+        shape of `convolution_shape`, sets strides, and initializes weights 
+        and biases uniformly in the range [0, 1).
 
         Args:
-            stride_shape (tuple or int): The stride of the convolution.
-            convolution_shape (tuple): Shape of the kernel/filter.
-            num_kernels (int): Number of kernels.
+            stride_shape (int or tuple): The stride of the convolution. If an integer is 
+                provided for a 1D convolution, it will be converted to a tuple. For a 2D 
+                convolution, a tuple of two integers should be provided.
+            convolution_shape (tuple): Shape of the kernel/filter. For 1D: (in_channels, kernel_width).
+                For 2D: (in_channels, kernel_height, kernel_width).
+            num_kernels (int): The number of kernels (output channels).
         """
         super().__init__()
+
         # Determine convolution dimensionality
         if len(convolution_shape) == 2:
             # 1D Convolution: [channels, kernel_length]
@@ -51,13 +85,21 @@ class Conv(BaseLayer):
 
     def forward(self, input_tensor):
         """
-        Forward pass for the convolutional layer.
+        Perform the forward pass of the convolutional layer.
+
+        This method applies convolution to the input tensor using the stored weights 
+        and biases. The input is padded to achieve 'same' convolution behavior (output 
+        size matches input size when stride=1).
 
         Args:
-            input_tensor (np.array): Input tensor with shape (batch, channels, spatial_dim...).
+            input_tensor (np.ndarray): The input tensor of shape:
+                - (batch_size, in_channels, width) for 1D convolution.
+                - (batch_size, in_channels, height, width) for 2D convolution.
 
         Returns:
-            np.array: Output tensor after applying convolution.
+            np.ndarray: The output tensor after applying convolution, with shape:
+                - (batch_size, num_kernels, new_width) for 1D convolution.
+                - (batch_size, num_kernels, new_height, new_width) for 2D convolution.
         """
         self.input_tensor = input_tensor
         batch_size, in_channels = input_tensor.shape[:2]
@@ -111,17 +153,24 @@ class Conv(BaseLayer):
 
     def backward(self, error_tensor):
         """
-        Backward pass for the convolutional layer.
+        Perform the backward pass of the convolutional layer.
+
+        This method computes the gradient of the loss with respect to the inputs, weights, 
+        and biases using the provided error tensor from the subsequent layer. It also applies 
+        upsampling to the error tensor if strides are greater than one and updates the 
+        parameters if optimizers are set.
 
         Args:
-            error_tensor (np.array): Error tensor from the next layer.
+            error_tensor (np.ndarray): The error tensor from the next layer, with shape:
+                - (batch_size, num_kernels, width) for 1D convolution.
+                - (batch_size, num_kernels, height, width) for 2D convolution.
 
         Returns:
-            np.array: Error tensor for the previous layer.
+            np.ndarray: The error tensor to pass to the previous layer, shaped the same 
+            as the input tensor of this layer.
         """
         batch_size, in_channels = self.input_tensor.shape[:2]
         spatial_dims_input = self.input_tensor.shape[2:]
-        spatial_dims_error = error_tensor.shape[2:]
 
         # Initialize gradients
         self._gradient_weights = np.zeros_like(self.weights)
@@ -145,6 +194,7 @@ class Conv(BaseLayer):
                 # Stack kernels across output channels for current input channel
                 stacked_kernels = np.flip(np.stack([self.weights[k, c] for k in range(self.num_kernels)], axis=0), axis=0)
                 grad = convolve(upsampled_error[b], stacked_kernels, mode='same')
+                # Extract the central slice (for correct alignment)
                 grad_input[b, c] = grad[(len(grad) - 1) // 2]
 
             for k in range(self.num_kernels):
@@ -156,7 +206,6 @@ class Conv(BaseLayer):
                     input_segment = self.padded_input[b, c]
                     self._gradient_weights[k, c] += correlate(input_segment, upsampled_error[b, k], mode='valid')
 
-
         # Update weights and biases using optimizer
         if self.optimizer_weights:
             self.weights = self.optimizer_weights.calculate_update(self.weights, self._gradient_weights)
@@ -167,13 +216,16 @@ class Conv(BaseLayer):
 
     def initialize(self, weights_initializer, bias_initializer):
         """
-        Reinitialize weights and biases using initializers.
+        Reinitialize weights and biases using the provided initializers.
+
+        This method calculates the fan_in and fan_out based on the convolution shape 
+        and then uses the given initializers to reinitialize the weights and biases.
 
         Args:
-            weights_initializer: Weights initializer object.
-            bias_initializer: Bias initializer object.
+            weights_initializer: An object with an `initialize` method for weights.
+            bias_initializer: An object with an `initialize` method for biases.
         """
-        # Calculate fan_in and fan_out correctly
+        # Calculate fan_in and fan_out
         if self.dim == 1:
             fan_in = self.convolution_shape[0] * self.convolution_shape[1]
             fan_out = self.num_kernels * self.convolution_shape[1]
@@ -186,10 +238,16 @@ class Conv(BaseLayer):
 
     @property
     def gradient_weights(self):
+        """
+        np.ndarray: The gradient of the loss with respect to the weights.
+        """
         return self._gradient_weights
 
     @property
     def gradient_bias(self):
+        """
+        np.ndarray: The gradient of the loss with respect to the biases.
+        """
         return self._gradient_bias
 
     @gradient_weights.setter
@@ -202,6 +260,10 @@ class Conv(BaseLayer):
 
     @property
     def optimizer(self):
+        """
+        Returns the current optimizer. Setting this property 
+        also sets the optimizers for weights and biases.
+        """
         return self._optimizer
 
     @optimizer.setter

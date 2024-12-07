@@ -2,25 +2,35 @@ import copy
 
 class NeuralNetwork:
     """
-    NeuralNetwork defines the entire architecture and manages the training and testing process.
-    
+    A neural network class that defines the network architecture and manages
+    training and testing procedures.
+
+    This class holds a sequence of layers, an optimizer, and initializer objects.
+    It coordinates forward and backward passes, applying the optimizer for
+    trainable parameters in each layer, and maintains a log of loss values
+    during training.
+
     Attributes:
-        optimizer: The optimizer object used for updating weights.
-        loss (list): Stores the loss value for each iteration during training.
-        layers (list): Holds the network's architecture (all layers).
-        data_layer: Provides input data and labels.
-        loss_layer: Computes loss and predictions.
-        label_tensor: Stores the label tensor for use in backpropagation.
-        weights_initializer: Initializer for weights.
-        bias_initializer: Initializer for biases.
+        optimizer: The optimizer object for updating the network weights.
+        loss (list): A list to store the loss value for each training iteration.
+        layers (list): A list holding all layers of the network.
+        data_layer: A data provider that returns input data and labels.
+        loss_layer: A layer that computes the loss and potentially the final
+            predictions of the network.
+        label_tensor: A tensor containing the target labels for training.
+        weights_initializer: An initializer object for layer weights.
+        bias_initializer: An initializer object for layer biases.
     """
 
     def __init__(self, optimizer, weights_initializer=None, bias_initializer=None):
         """
-        Initialize the NeuralNetwork with an optimizer and empty lists for layers and loss values.
-        
+        Initialize the NeuralNetwork instance with a given optimizer and optional
+        weight and bias initializers.
+
         Args:
-            optimizer: The optimizer object for the network.
+            optimizer: The optimizer to be used for updating layer parameters.
+            weights_initializer (optional): An initializer object for weights.
+            bias_initializer (optional): An initializer object for biases.
         """
         self.optimizer = optimizer
         self.loss = []
@@ -33,10 +43,14 @@ class NeuralNetwork:
 
     def forward(self):
         """
-        Perform a forward pass through the network using input from the data layer.
-        
+        Perform a forward pass through the entire network.
+
+        This method retrieves the next batch of input data and labels from the
+        data_layer, then propagates the input forward through all layers. 
+        Finally, the output is returned.
+
         Returns:
-            The output of the last layer (loss layer) of the network.
+            np.ndarray: The network output after the forward pass.
         """
         input_tensor, self.label_tensor = self.data_layer.next()  # Get input and labels from data layer
         for layer in self.layers:
@@ -79,13 +93,13 @@ class NeuralNetwork:
 
     def test(self, input_tensor):
         """
-        Propagate the input tensor through the network and return the prediction.
-        
+        Test the network with a given input tensor.
+
         Args:
-            input_tensor: The input tensor to test the network.
-        
+            input_tensor (np.ndarray): The input data for testing.
+
         Returns:
-            The prediction of the last layer.
+            np.ndarray: The network prediction for the given input.
         """
         for layer in self.layers:
             input_tensor = layer.forward(input_tensor)  # Pass through each layer
