@@ -134,11 +134,13 @@ class Conv(BaseLayer):
                     if self.dim == 1:
                         # 1D Convolution: correlate along the single spatial dimension
                         conv = correlate(self.padded_input[b, c], self.weights[k, c], mode='valid')
+                        # conv = correlate(self.input_tensor[b, c], self.weights[k, c], mode='same')
                         # Apply stride
                         conv = conv[::self.stride_shape[0]]
                     else:
                         # 2D Convolution: correlate along both spatial dimensions
                         conv = correlate(self.padded_input[b, c], self.weights[k, c], mode='valid')
+                        # conv = correlate(self.input_tensor[b, c], self.weights[k, c], mode='same')
                         # Apply stride
                         conv = conv[::self.stride_shape[0], ::self.stride_shape[1]]
                     if conv_sum is None:
@@ -264,7 +266,7 @@ class Conv(BaseLayer):
         Returns the current optimizer. Setting this property 
         also sets the optimizers for weights and biases.
         """
-        return self._optimizer
+        return self.optimizer_weights, self.optimizer_bias
 
     @optimizer.setter
     def optimizer(self, optimizer):
